@@ -1,7 +1,7 @@
 // src/pages/TeacherDashboard.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, History, Settings } from 'lucide-react';
+import { Plus, History, Settings, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 
@@ -16,7 +16,7 @@ interface ClassroomFormData {
 function CreateClassModal({
   isOpen,
   onClose,
-  onSubmit
+  onSubmit,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -27,12 +27,12 @@ function CreateClassModal({
     subject: '',
     duration_minutes: 60,
     description: '',
-    instructor: ''
+    instructor: '',
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,9 +48,7 @@ function CreateClassModal({
         <h2 className="text-xl font-bold mb-4">Create a New Classroom</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Class Name
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Class Name</label>
             <input
               type="text"
               name="name"
@@ -61,9 +59,7 @@ function CreateClassModal({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Subject
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Subject</label>
             <input
               type="text"
               name="subject"
@@ -73,9 +69,7 @@ function CreateClassModal({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Duration (minutes)
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Duration (minutes)</label>
             <input
               type="number"
               name="duration_minutes"
@@ -85,9 +79,7 @@ function CreateClassModal({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Instructor Name
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Instructor Name</label>
             <input
               type="text"
               name="instructor"
@@ -97,9 +89,7 @@ function CreateClassModal({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Description
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Description</label>
             <textarea
               name="description"
               value={formData.description}
@@ -135,8 +125,7 @@ export default function TeacherDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isTeacher, setIsTeacher] = useState(false);
-
-  // State for modal
+  const [teacherName, setTeacherName] = useState('Teacher'); // For welcome message
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
@@ -149,7 +138,7 @@ export default function TeacherDashboard() {
       try {
         const { data: userData, error: userError } = await supabase
           .from('users')
-          .select('role')
+          .select('role, full_name')
           .eq('id', user.id)
           .single();
 
@@ -167,6 +156,7 @@ export default function TeacherDashboard() {
         }
 
         setIsTeacher(true);
+        setTeacherName(userData.full_name || 'Teacher');
         fetchClassrooms();
       } catch (err) {
         console.error('Error:', err);
@@ -201,23 +191,19 @@ export default function TeacherDashboard() {
     }
   };
 
-  // Open the modal
   const openCreateModal = () => {
     setShowModal(true);
   };
 
-  // Close the modal
   const closeCreateModal = () => {
     setShowModal(false);
   };
 
-  // Insert the new class with extra fields
   const handleCreateClass = async (formData: ClassroomFormData) => {
     if (!user || !isTeacher) return;
     setShowModal(false);
 
     try {
-      // Generate random code
       const code = Math.random().toString(36).substring(2, 8).toUpperCase();
       const { data, error } = await supabase
         .from('classrooms')
@@ -229,7 +215,7 @@ export default function TeacherDashboard() {
             subject: formData.subject,
             duration_minutes: formData.duration_minutes,
             description: formData.description,
-            instructor: formData.instructor
+            instructor: formData.instructor,
           },
         ])
         .select()
@@ -248,6 +234,27 @@ export default function TeacherDashboard() {
     } catch (err) {
       console.error('Error:', err);
       setError('An unexpected error occurred while creating the classroom.');
+    }
+  };
+
+  // Delete a classroom
+  const deleteClassroom = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this classroom?')) {
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from('classrooms')
+        .delete()
+        .eq('id', id);
+      if (error) {
+        console.error('Error deleting classroom:', error);
+        alert('Failed to delete classroom. Check console for details.');
+      } else {
+        setClassrooms((prev) => prev.filter((cls) => cls.id !== id));
+      }
+    } catch (err) {
+      console.error('Unexpected error deleting classroom:', err);
     }
   };
 
@@ -272,16 +279,13 @@ export default function TeacherDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Create Class Modal */}
-      <CreateClassModal
-        isOpen={showModal}
-        onClose={closeCreateModal}
-        onSubmit={handleCreateClass}
-      />
-
+      <CreateClassModal isOpen={showModal} onClose={closeCreateModal} onSubmit={handleCreateClass} />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Teacher Dashboard</h1>
+          <div className="flex flex-col">
+            <h1 className="text-3xl font-bold text-gray-900">Teacher Dashboard</h1>
+            <p className="text-sm text-gray-600">Welcome, {teacherName}!</p>
+          </div>
           <button
             onClick={openCreateModal}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
@@ -345,6 +349,13 @@ export default function TeacherDashboard() {
                     className="p-2 text-gray-600 hover:text-gray-900 transition"
                   >
                     <Settings className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => deleteClassroom(classroom.id)}
+                    className="p-2 text-gray-600 hover:text-gray-900 transition"
+                    title="Delete Classroom"
+                  >
+                    <Trash2 className="w-5 h-5" />
                   </button>
                 </div>
               </div>

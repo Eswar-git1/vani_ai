@@ -15,17 +15,19 @@ export default function ClassroomTeacher() {
     transcription,
     error,
     startRecording,
-    stopRecording
+    stopRecording,
+    setSessionId,
   } = useTranslationStore();
 
   const [activeStudents, setActiveStudents] = useState<Array<{ id: string; name: string; language: string }>>([]);
   const [showParticipants, setShowParticipants] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, localSetSessionId] = useState<string | null>(null);
 
-  // Presence subscription to track student participants
+  // Presence subscription
   useEffect(() => {
     if (!classroomId) return;
     const channel = supabase.channel(`classroom:${classroomId}`);
+
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState();
       const students: Array<{ id: string; name: string; language: string }> = [];
@@ -42,9 +44,9 @@ export default function ClassroomTeacher() {
       });
       setActiveStudents(students);
     });
+
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED' && user) {
-        // Fetch teacher's full name from DB if available
         let teacherName = 'Teacher';
         try {
           const { data: teacherData } = await supabase
@@ -62,16 +64,17 @@ export default function ClassroomTeacher() {
           user_id: user.id,
           name: teacherName,
           language: user.user_metadata?.preferred_language || 'en',
-          role: 'teacher'
+          role: 'teacher',
         });
       }
     });
+
     return () => {
       channel.unsubscribe();
     };
   }, [classroomId, user]);
 
-  // Session creation: insert a new session when teacher starts class
+  // Create a new session
   const createClassSession = async (): Promise<{ id: string } | null> => {
     try {
       const { data, error } = await supabase
@@ -80,7 +83,9 @@ export default function ClassroomTeacher() {
           classroom_id: classroomId,
           started_at: new Date().toISOString(),
         })
+        .select()
         .single();
+
       if (error) {
         console.error('Session creation failed', error);
         return null;
@@ -92,38 +97,56 @@ export default function ClassroomTeacher() {
     }
   };
 
-  // Session finalization: update session with end time and student count
-  const finalizeClassSession = async (sessionId: string) => {
+  // Finalize session
+  const finalizeClassSession = async (id: string) => {
     try {
-      const { data, error } = await supabase
+      // fetch started_at
+      const { data: sessionRow, error: fetchError } = await supabase
+        .from('class_sessions')
+        .select('started_at')
+        .eq('id', id)
+        .single();
+      if (fetchError || !sessionRow) {
+        console.error('Error fetching session row:', fetchError);
+        return;
+      }
+
+      const startTime = new Date(sessionRow.started_at).getTime();
+      const endTime = Date.now();
+      const actualDuration = Math.floor((endTime - startTime) / 60000);
+
+      const { error: updateError } = await supabase
         .from('class_sessions')
         .update({
-          ended_at: new Date().toISOString(),
+          ended_at: new Date(endTime).toISOString(),
           student_count: activeStudents.length,
+          duration_minutes: actualDuration,
         })
-        .eq('id', sessionId);
-      if (error) {
-        console.error('Session update failed', error);
+        .eq('id', id);
+
+      if (updateError) {
+        console.error('Session update failed:', updateError);
+      } else {
+        console.log(`Session ${id} finalized with duration_minutes = ${actualDuration}`);
       }
-      return data;
     } catch (err) {
       console.error('Error finalizing session:', err);
-      return null;
     }
   };
 
-  // Toggle recording and session creation/finalization
   const toggleRecording = async () => {
     if (isRecording) {
       stopRecording();
       if (sessionId) {
         await finalizeClassSession(sessionId);
+        localSetSessionId(null);
         setSessionId(null);
       }
     } else {
       await startRecording();
       const newSession = await createClassSession();
       if (newSession && newSession.id) {
+        localSetSessionId(newSession.id);
         setSessionId(newSession.id);
       }
     }
@@ -131,7 +154,6 @@ export default function ClassroomTeacher() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* View Participants Modal */}
       {showParticipants && (
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-md p-6 rounded-lg shadow-lg relative">
@@ -169,7 +191,6 @@ export default function ClassroomTeacher() {
               >
                 <Settings className="w-6 h-6" />
               </button>
-              {/* View Participants Button */}
               <button
                 onClick={() => setShowParticipants(true)}
                 className="p-2 text-gray-600 hover:text-gray-900 transition"

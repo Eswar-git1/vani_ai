@@ -1,3 +1,5 @@
+// src/store/translationStore.ts
+
 import { create } from 'zustand';
 import { WebRTCManager } from '../lib/webrtc';
 import { initializeGoogleSocket } from '../lib/api';
@@ -10,14 +12,19 @@ interface TranslationState {
   webrtc: WebRTCManager;
   sttSocket: WebSocket | null;
 
-  // Teacher language state
+  // Teacher language preference
   teacherLang: string;
   setTeacherLang: (lang: string) => void;
+
+  // Session ID so transcripts reference the correct session
+  sessionId: string | null;
+  setSessionId: (id: string | null) => void;
 
   startRecording: () => Promise<void>;
   stopRecording: () => void;
   setTranscription: (text: string) => void;
   setError: (err: string | null) => void;
+
   processTranscription: (text: string) => Promise<void>;
 }
 
@@ -28,12 +35,14 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
   webrtc: new WebRTCManager(),
   sttSocket: null,
 
-  // Initialize teacherLang to 'en' (or whatever default you want)
   teacherLang: 'en',
-
-  // The new setter:
   setTeacherLang: (lang: string) => {
     set({ teacherLang: lang });
+  },
+
+  sessionId: null,
+  setSessionId: (id: string | null) => {
+    set({ sessionId: id });
   },
 
   startRecording: async () => {
@@ -44,7 +53,11 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
       await webrtc.initializeAudio();
 
       // Connect to your Node-based Google STT server
-      const socket = await initializeGoogleSocket(teacherLang); // Pass teacherLang here
+      const socket = await initializeGoogleSocket(teacherLang);
+
+      socket.onopen = () => {
+        console.log('Google STT WebSocket connected successfully.');
+      };
 
       socket.onmessage = async (event) => {
         try {
@@ -61,8 +74,18 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
         }
       };
 
+      socket.onerror = (evt) => {
+        console.error('Google STT socket error:', evt);
+        set({ error: 'Google STT socket encountered an error' });
+      };
+
+      socket.onclose = (evt) => {
+        console.log('Google STT socket closed:', evt.code, evt.reason);
+      };
+
       set({ sttSocket: socket, isRecording: true, error: null });
 
+      // Continuously send audio data to STT
       await webrtc.startRecording(async (audioData: Blob) => {
         const { sttSocket } = get();
         if (sttSocket?.readyState === WebSocket.OPEN) {
@@ -101,19 +124,27 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
 
   processTranscription: async (text: string) => {
     set({ transcription: text });
+
+    // Insert transcripts by session_id
+    const { sessionId } = get();
+    if (!sessionId) {
+      console.warn('No sessionId set. Not storing transcript in class_history.');
+    } else {
+      try {
+        const { error } = await supabase
+          .from('class_history')
+          .insert([{ session_id: sessionId, transcription: text }]);
+        if (error) {
+          console.error('Error inserting class_history:', error);
+        }
+      } catch (err) {
+        console.error('Unexpected error inserting transcript:', err);
+      }
+    }
+
+    // Also broadcast to students
     const classroomId = window.location.pathname.split('/').pop();
     if (classroomId) {
-      console.log('Sending transcription to classroom:', classroomId);
-      const { data, error } = await supabase
-        .from('class_history')
-        .insert([{ classroom_id: classroomId, transcription: text }]);
-
-      if (error) {
-        console.error('Error inserting class history:', error);
-      } else {
-        console.log('Class history inserted:', data);
-      }
-
       await supabase.channel(`classroom:${classroomId}`).send({
         type: 'broadcast',
         event: 'transcription',

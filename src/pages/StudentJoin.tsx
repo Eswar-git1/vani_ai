@@ -1,16 +1,43 @@
-import React, { useState } from 'react';
+// src/pages/StudentJoin.tsx
+
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { ArrowRight } from 'lucide-react';
-import { STUDENT_LANGUAGES } from '../lib/constants';
+import { useAuthStore } from '../store/authStore';
 
 export default function StudentJoin() {
   const navigate = useNavigate();
+  const { user } = useAuthStore(); // The logged-in user from your auth store
   const [code, setCode] = useState('');
-  // Set default preferred language to Hindi for testing.
-  const [language, setLanguage] = useState('hi');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // We'll store the student's name here to show a welcome message
+  const [fullName, setFullName] = useState('Student');
+
+  // If there's no user, redirect to the student auth page
+  // Otherwise, fetch the user's full_name from DB
+  useEffect(() => {
+    if (!user) {
+      navigate('/auth?role=student');
+      return;
+    }
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('full_name')
+          .eq('id', user.id)
+          .single();
+        if (!error && data?.full_name) {
+          setFullName(data.full_name);
+        }
+      } catch (err) {
+        console.error('Error fetching student name:', err);
+      }
+    })();
+  }, [user, navigate]);
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,20 +58,12 @@ export default function StudentJoin() {
         return;
       }
 
-      // Update student's preferred language in the DB.
-      // (Assuming the student is authenticated; use their id.)
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ preferred_language: language })
-        .eq('id', data.id); // Ideally, use the logged-in user's id
-
-      if (updateError) {
-        console.error('Error updating preferred language:', updateError);
-      }
-
+      // Navigate directly to the classroom
       navigate(`/student/classroom/${data.id}`);
     } catch (err) {
+      console.error('Failed to join class:', err);
       setError('Failed to join class');
+    } finally {
       setLoading(false);
     }
   };
@@ -54,8 +73,9 @@ export default function StudentJoin() {
       <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-lg">
         <div className="text-center">
           <h2 className="text-3xl font-bold text-gray-900">Join a Class</h2>
+          {/* Display the student's full name in a welcome message */}
           <p className="mt-2 text-gray-600">
-            Enter the class code and select your preferred language
+            Welcome, {fullName}!
           </p>
         </div>
 
@@ -67,7 +87,10 @@ export default function StudentJoin() {
 
         <form onSubmit={handleJoin} className="space-y-6">
           <div>
-            <label htmlFor="code" className="block text-sm font-medium text-gray-700">
+            <label
+              htmlFor="code"
+              className="block text-sm font-medium text-gray-700"
+            >
               Class Code
             </label>
             <input
@@ -80,24 +103,6 @@ export default function StudentJoin() {
               placeholder="Enter 6-digit code"
               maxLength={6}
             />
-          </div>
-
-          <div>
-            <label htmlFor="language" className="block text-sm font-medium text-gray-700">
-              Preferred Language
-            </label>
-            <select
-              id="language"
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-            >
-              {STUDENT_LANGUAGES.map((lang) => (
-                <option key={lang.code} value={lang.code}>
-                  {lang.name}
-                </option>
-              ))}
-            </select>
           </div>
 
           <button

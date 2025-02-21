@@ -6,6 +6,7 @@ export const TEACHER_LANGUAGES = [
 ];
 
 export const STUDENT_LANGUAGES = [
+  { code: 'en', name: 'English' },
   { code: 'hi', name: 'हिंदी (Hindi)' },
   { code: 'my', name: 'Burmese' },
   { code: 'sw', name: 'Kiswahili (Tanzania)' },

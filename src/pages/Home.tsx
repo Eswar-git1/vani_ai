@@ -1,4 +1,3 @@
-import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Headphones, Users, Globe2 } from 'lucide-react';
 
@@ -8,7 +7,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-white to-blue-50 flex flex-col">
       <header className="py-12 text-center">
-        <h1 className="text-6xl md:text-7xl font-extrabold text-gray-900">
+        <h1 className="text-6xl md:text-7xl font-extrabold text-blue-600">
           वाणी AI
         </h1>
         <p className="mt-4 text-2xl md:text-3xl text-gray-700">

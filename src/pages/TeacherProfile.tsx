@@ -1,4 +1,5 @@
 // src/pages/TeacherProfile.tsx
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -16,6 +17,7 @@ export default function TeacherProfile() {
   const [preferredLanguage, setPreferredLanguage] = useState('en');
   const [success, setSuccess] = useState(false);
 
+  // We'll display "Welcome, {fullName}!" in the UI
   useEffect(() => {
     if (!user) {
       navigate('/auth?role=teacher');
@@ -25,10 +27,11 @@ export default function TeacherProfile() {
       try {
         const { data, error } = await supabase
           .from('users')
-          .select('*')
+          .select('full_name, preferred_language')
           .eq('id', user.id)
           .single();
         if (error) throw error;
+
         if (data) {
           setFullName(data.full_name || '');
           setPreferredLanguage(data.preferred_language || 'en');
@@ -48,6 +51,7 @@ export default function TeacherProfile() {
     setSaving(true);
     setError('');
     setSuccess(false);
+
     try {
       const { error: updateError } = await supabase
         .from('users')
@@ -57,6 +61,7 @@ export default function TeacherProfile() {
         })
         .eq('id', user?.id);
       if (updateError) throw updateError;
+
       setSuccess(true);
     } catch (err) {
       console.error('Error updating profile:', err);
@@ -78,17 +83,28 @@ export default function TeacherProfile() {
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-6">Profile Settings</h1>
+          {/* Display the teacher's name */}
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-bold text-gray-900">
+              Profile Settings
+            </h1>
+            <p className="text-sm text-gray-600">
+              Welcome, {fullName || 'Teacher'}!
+            </p>
+          </div>
+
           {error && (
             <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-600">
               {error}
             </div>
           )}
+
           {success && (
             <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg text-green-600">
               Profile updated successfully!
             </div>
           )}
+
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label htmlFor="fullName" className="block text-sm font-medium text-gray-700">
@@ -108,6 +124,7 @@ export default function TeacherProfile() {
                 />
               </div>
             </div>
+
             <div>
               <label htmlFor="language" className="block text-sm font-medium text-gray-700">
                 Preferred Language
@@ -130,6 +147,7 @@ export default function TeacherProfile() {
                 </select>
               </div>
             </div>
+
             <button
               type="submit"
               disabled={saving}

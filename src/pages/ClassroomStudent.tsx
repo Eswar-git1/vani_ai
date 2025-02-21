@@ -1,7 +1,7 @@
 // src/pages/ClassroomStudent.tsx
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { AlertCircle, Users, Volume2, VolumeX, Globe2 } from 'lucide-react';
+import { AlertCircle, Users, Volume2, VolumeX, Globe2, XCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { STUDENT_LANGUAGES } from '../lib/constants';
@@ -12,7 +12,6 @@ interface Teacher {
   full_name: string | null;
   preferred_language: string;
   role: string;
-  // you can add more fields if needed
 }
 
 interface Classroom {
@@ -22,9 +21,9 @@ interface Classroom {
   teacher_id: string;
   teacher: Teacher | null;
   is_active: boolean;
-  instructor?: string;       // if stored in DB
-  subject?: string;          // if stored in DB
-  description?: string;      // if stored in DB
+  instructor?: string;
+  subject?: string;
+  description?: string;
 }
 
 export default function ClassroomStudent() {
@@ -46,19 +45,20 @@ export default function ClassroomStudent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Student count excludes teacher
+  // Student count (excludes teacher)
   const [studentCount, setStudentCount] = useState<number>(0);
-
-  // If teacher is present
+  // Whether the teacher is present
   const [teacherPresent, setTeacherPresent] = useState(false);
 
   // Student’s preferred language
   const [preferredLanguage, setPreferredLanguage] = useState<string>('hi');
+  // Student’s full name for display
+  const [studentName, setStudentName] = useState<string>('Student');
 
   // Audio ref for TTS playback
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  // Attempt to play TTS audio
+  // Attempt to play TTS audio whenever audioUrl changes
   useEffect(() => {
     if (audioUrl && audioEnabled && audioRef.current) {
       audioRef.current.src = audioUrl;
@@ -72,7 +72,7 @@ export default function ClassroomStudent() {
     setAudioEnabled(!audioEnabled);
   };
 
-  // Change language => update local state + DB
+  // Language change => update local state + DB
   const handleLanguageChange = async (newLang: string) => {
     setPreferredLanguage(newLang);
     if (!user) return;
@@ -91,6 +91,11 @@ export default function ClassroomStudent() {
     }
   };
 
+  // Exit the classroom
+  const handleExit = () => {
+    navigate('/student/join');
+  };
+
   useEffect(() => {
     const fetchClassroom = async () => {
       if (!classroomId || !user) {
@@ -99,7 +104,7 @@ export default function ClassroomStudent() {
         return;
       }
       try {
-        // 1) Fetch classroom
+        // 1) Fetch classroom + teacher
         const { data: classroomData, error: classroomError } = await supabase
           .from('classrooms')
           .select(`
@@ -138,36 +143,37 @@ export default function ClassroomStudent() {
 
         // If teacher is an array, pick first
         if (classroomData.teacher && Array.isArray(classroomData.teacher)) {
-          classroomData.teacher = classroomData.teacher.length > 0 ? classroomData.teacher[0] : null;
+          classroomData.teacher =
+            classroomData.teacher.length > 0 ? classroomData.teacher[0] : null;
         }
         setClassroom(classroomData as Classroom);
 
-        // 2) Fetch student's preferred language
+        // 2) Fetch student's preferred language & full name
         const { data: userData } = await supabase
           .from('users')
           .select('preferred_language, full_name')
           .eq('id', user.id)
           .single();
 
+        // Set the student's local language
         if (userData?.preferred_language) {
           setPreferredLanguage(userData.preferred_language);
         } else {
           setPreferredLanguage('hi');
         }
 
-        // We also might want the student’s full_name from DB:
-        const studentFullName = userData?.full_name || 'Student';
+        // Set the student's display name
+        const fullName = userData?.full_name || 'Student';
+        setStudentName(fullName);
 
         // 3) Realtime presence
         const channel = supabase.channel(`classroom:${classroomId}`);
 
         channel.on('presence', { event: 'sync' }, () => {
           const state = channel.presenceState();
-
           let teacherFound = false;
           let countStudents = 0;
 
-          // presenceState is an object with keys = user_ids, each an array of presences
           Object.values(state).forEach((arr: any) => {
             arr.forEach((presence: any) => {
               if (presence.role === 'teacher') {
@@ -195,10 +201,10 @@ export default function ClassroomStudent() {
 
         channel.subscribe(async (status) => {
           if (status === 'SUBSCRIBED') {
-            // 4) Student calls channel.track => role: 'student'
+            // Track presence as a student
             await channel.track({
               user_id: user.id,
-              name: studentFullName,
+              name: fullName,
               language: userData?.preferred_language || 'en',
               role: 'student',
             });
@@ -252,7 +258,7 @@ export default function ClassroomStudent() {
           <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">{classroom.name}</h1>
-              {/* Show instructor from DB or teacher’s full_name */}
+              {/* Show instructor or teacher’s full_name */}
               <p className="text-sm text-gray-500">
                 Instructor: {classroom.instructor || classroom.teacher?.full_name || 'N/A'}
               </p>
@@ -262,6 +268,10 @@ export default function ClassroomStudent() {
               {classroom.description && (
                 <p className="text-sm text-gray-500">Description: {classroom.description}</p>
               )}
+              {/* Display the student's own name */}
+              <p className="mt-2 text-sm text-gray-800 font-medium">
+                You are logged in as {studentName}
+              </p>
             </div>
             <div className="flex items-center space-x-4">
               <button
@@ -275,6 +285,14 @@ export default function ClassroomStudent() {
                 <Users className="w-6 h-6 mr-2" />
                 <span>{studentCount} Students</span>
               </div>
+              {/* EXIT Button */}
+              <button
+                onClick={handleExit}
+                className="p-2 text-gray-600 hover:text-red-600 transition"
+                title="Exit Classroom"
+              >
+                <XCircle className="w-6 h-6" />
+              </button>
             </div>
           </div>
 
@@ -301,9 +319,7 @@ export default function ClassroomStudent() {
             {/* Display Teacher/Translation */}
             <div className="bg-gray-50 rounded-lg p-6">
               <div className="text-center text-gray-500 text-sm mb-4">
-                {teacherPresent
-                  ? 'Teacher joined.'
-                  : 'Waiting for teacher...'}
+                {teacherPresent ? 'Teacher joined.' : 'Waiting for teacher...'}
               </div>
 
               <div className="text-center text-gray-500 text-sm mb-4">

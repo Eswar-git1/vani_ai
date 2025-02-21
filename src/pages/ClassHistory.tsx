@@ -20,12 +20,12 @@ interface ClassSession {
   started_at: string;
   ended_at: string | null;
   student_count: number;
+  duration_minutes: number | null;  // We'll store actual duration here
   classroom: {
     name: string;
     code: string;
     subject?: string | null;
     instructor?: string | null;
-    duration_minutes?: number | null;
   };
   transcriptions?: ClassHistoryRow[];
 }
@@ -45,8 +45,8 @@ export default function ClassHistory() {
 
     const fetchHistory = async () => {
       try {
-        // Make sure you have session_id referencing class_sessions(id) in class_history
-        // so you can do the relationship: class_history!session_id
+        // class_history references session_id
+        // We also select duration_minutes from class_sessions
         const { data, error } = await supabase
           .from('class_sessions')
           .select(`
@@ -55,12 +55,12 @@ export default function ClassHistory() {
             started_at,
             ended_at,
             student_count,
+            duration_minutes,
             classroom:classrooms (
               name,
               code,
               subject,
-              instructor,
-              duration_minutes
+              instructor
             ),
             transcriptions:class_history!session_id (
               transcription,
@@ -82,16 +82,6 @@ export default function ClassHistory() {
     fetchHistory();
   }, [user, navigate]);
 
-  // Calculate actual duration in minutes
-  const getActualDuration = (started: string, ended: string | null) => {
-    if (!ended) return 0;
-    const start = new Date(started).getTime();
-    const end = new Date(ended).getTime();
-    const diffMs = end - start;
-    return Math.floor(diffMs / 60000);
-  };
-
-  // Export to CSV
   const exportToCSV = (session: ClassSession) => {
     const csvData = [
       {
@@ -102,8 +92,7 @@ export default function ClassHistory() {
         StartTime: new Date(session.started_at).toLocaleString(),
         EndTime: session.ended_at ? new Date(session.ended_at).toLocaleString() : 'N/A',
         StudentCount: session.student_count,
-        PlannedDuration: session.classroom?.duration_minutes || 0,
-        ActualDuration: getActualDuration(session.started_at, session.ended_at),
+        ActualDuration: session.duration_minutes ?? 0,
       },
     ];
     const csv = Papa.unparse(csvData);
@@ -118,13 +107,11 @@ export default function ClassHistory() {
     document.body.removeChild(link);
   };
 
-  // Export to PDF, including transcripts
   const exportToPDF = (session: ClassSession) => {
     const doc = new jsPDF();
     doc.setFontSize(12);
     doc.text('Class Session Report', 14, 20);
 
-    // Basic info
     const lines = [
       `Session ID: ${session.id}`,
       `Class Name: ${session.classroom?.name || 'Unknown'}`,
@@ -133,8 +120,7 @@ export default function ClassHistory() {
       `Start Time: ${new Date(session.started_at).toLocaleString()}`,
       `End Time: ${session.ended_at ? new Date(session.ended_at).toLocaleString() : 'N/A'}`,
       `Student Count: ${session.student_count}`,
-      `Planned Duration: ${session.classroom?.duration_minutes || 0} minutes`,
-      `Actual Duration: ${getActualDuration(session.started_at, session.ended_at)} minutes`,
+      `Actual Duration: ${session.duration_minutes ?? 0} minutes`,
     ];
 
     let yPos = 30;
@@ -143,7 +129,7 @@ export default function ClassHistory() {
       yPos += 8;
     });
 
-    // If transcripts exist, show them in a table
+    // Show transcripts in a table if any
     if (session.transcriptions && session.transcriptions.length > 0) {
       yPos += 8;
       doc.text('Transcripts:', 14, yPos);
@@ -167,11 +153,8 @@ export default function ClassHistory() {
     doc.save(`session_${session.id}.pdf`);
   };
 
-  // Delete session
   const deleteSession = async (sessionId: string) => {
-    if (!window.confirm('Are you sure you want to delete this session?')) {
-      return;
-    }
+    if (!window.confirm('Are you sure you want to delete this session?')) return;
     try {
       const { error } = await supabase
         .from('class_sessions')
@@ -181,7 +164,6 @@ export default function ClassHistory() {
         console.error('Error deleting session:', error);
         alert('Failed to delete session. Check console for details.');
       } else {
-        // Filter out the deleted session from local state
         setSessions((prev) => prev.filter((s) => s.id !== sessionId));
       }
     } catch (err) {
@@ -220,73 +202,66 @@ export default function ClassHistory() {
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {sessions.map((session) => {
-              const actualDuration = getActualDuration(session.started_at, session.ended_at);
-              return (
-                <div
-                  key={session.id}
-                  className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition"
-                >
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                    {session.classroom?.name || 'Unknown Class'}
-                  </h3>
-                  <div className="space-y-3 text-sm text-gray-600">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4" />
-                      <span>{new Date(session.started_at).toLocaleDateString()}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4" />
-                      <span>{new Date(session.started_at).toLocaleTimeString()}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4" />
-                      <span>{session.student_count} students</span>
-                    </div>
-                    <div>
-                      Instructor:{' '}
-                      <span className="text-gray-800 font-medium">
-                        {session.classroom?.instructor || 'N/A'}
-                      </span>
-                    </div>
-                    <div>
-                      Subject:{' '}
-                      <span className="text-gray-800 font-medium">
-                        {session.classroom?.subject || 'N/A'}
-                      </span>
-                    </div>
-                    <div>
-                      Planned Duration:{' '}
-                      {session.classroom?.duration_minutes || 0} min
-                    </div>
-                    <div>Actual Duration: {actualDuration} min</div>
+            {sessions.map((session) => (
+              <div
+                key={session.id}
+                className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition"
+              >
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  {session.classroom?.name || 'Unknown Class'}
+                </h3>
+                <div className="space-y-3 text-sm text-gray-600">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    <span>{new Date(session.started_at).toLocaleDateString()}</span>
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <button
-                      onClick={() => exportToCSV(session)}
-                      className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition text-sm"
-                    >
-                      <Download className="w-4 h-4" />
-                      CSV
-                    </button>
-                    <button
-                      onClick={() => exportToPDF(session)}
-                      className="flex items-center gap-1 px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition text-sm"
-                    >
-                      <FileText className="w-4 h-4" />
-                      PDF
-                    </button>
-                    <button
-                      onClick={() => deleteSession(session.id)}
-                      className="flex items-center gap-1 px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition text-sm"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Delete
-                    </button>
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    <span>{new Date(session.started_at).toLocaleTimeString()}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    <span>{session.student_count} students</span>
+                  </div>
+                  <div>
+                    Instructor: <span className="text-gray-800 font-medium">
+                      {session.classroom?.instructor || 'N/A'}
+                    </span>
+                  </div>
+                  <div>
+                    Subject: <span className="text-gray-800 font-medium">
+                      {session.classroom?.subject || 'N/A'}
+                    </span>
+                  </div>
+                  <div>
+                    Actual Duration: {session.duration_minutes ?? 0} min
                   </div>
                 </div>
-              );
-            })}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => exportToCSV(session)}
+                    className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition text-sm"
+                  >
+                    <Download className="w-4 h-4" />
+                    CSV
+                  </button>
+                  <button
+                    onClick={() => exportToPDF(session)}
+                    className="flex items-center gap-1 px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition text-sm"
+                  >
+                    <FileText className="w-4 h-4" />
+                    PDF
+                  </button>
+                  <button
+                    onClick={() => deleteSession(session.id)}
+                    className="flex items-center gap-1 px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition text-sm"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
