@@ -17,17 +17,27 @@ Vani AI is a real-time speech translation and transcription system designed to h
 🌐 Frontend hosted on Vercel, with a WebSocket Server on Render.
 
 🛠️ Tech Stack
+
 Component	Technology Used
+
 Frontend	React + Vite + TypeScript
+
 Backend	Supabase (PostgreSQL)
+
 Speech-to-Text	Google STT API
+
 Translation	Google Translate API
+
 Text-to-Speech	Azure Speech Services
+
 Hosting	Vercel (Frontend), Render (STT WebSocket Server)
 
 👨‍💻 Contributors
+
 Eswar Tavva (@Eswar-git1)
+
 📄 License
+
 This project is licensed under the MIT License.
 
 
